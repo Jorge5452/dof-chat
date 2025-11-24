@@ -27,7 +27,11 @@ class ConversationNewPage:
                 air.Meta(charset="UTF-8"),
                 air.Meta(name="viewport", content="width=device-width, initial-scale=1.0"),
                 air.Link(rel="stylesheet", href="/static/css/chat.css"),
-                air.Link(rel="stylesheet", href="/static/css/context.css")
+                air.Link(rel="stylesheet", href="/static/css/context.css"),
+                air.Link(rel="stylesheet", href="/static/css/markdown.css"),
+                # CDN libraries for markdown rendering
+                air.Script(src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"),
+                air.Script(src="https://cdn.jsdelivr.net/npm/dompurify@3.0.7/dist/purify.min.js")
             ),
             
             air.Body(
@@ -79,6 +83,7 @@ class ConversationNewPage:
                 ),
                 
                 # JavaScript for chat functionality
+                air.Script(src="/static/js/markdown-renderer.js"),
                 air.Script(src="/static/js/chat.js")
             )
         )

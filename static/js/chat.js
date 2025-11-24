@@ -86,11 +86,17 @@ class ChatClient {
     }
 
     addMessage(content, type) {
-        const messageId = 'msg-' + (window.crypto && crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).substr(2, 9)));
+        const messageId = 'msg-' + (window.crypto && crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2, 11)));
         const messageElement = document.createElement('div');
         messageElement.className = `message ${type}`;
         messageElement.id = messageId;
-        messageElement.textContent = content;
+        
+        // Apply markdown rendering for user messages, escape for others
+        if (type === 'user' && window.SafeMarkdownRenderer) {
+            messageElement.innerHTML = SafeMarkdownRenderer.renderChatMessage(content);
+        } else {
+            messageElement.textContent = content;
+        }
 
         this.elements.chatWindow.appendChild(messageElement);
         this.scrollToBottom();
@@ -101,17 +107,25 @@ class ChatClient {
         const messageElement = document.createElement('div');
         messageElement.className = 'message bot';
         
-        // Add main answer
+        // Add main answer with markdown rendering
         const answerElement = document.createElement('div');
-        answerElement.textContent = response.answer;
+        const renderedAnswer = window.SafeMarkdownRenderer 
+            ? SafeMarkdownRenderer.renderChatMessage(response.answer)
+            : this.escapeHtml(response.answer);
+        answerElement.innerHTML = renderedAnswer;
         messageElement.appendChild(answerElement);
 
-        // Add context HTML with enhanced security validation
+        // Add context HTML with enhanced security validation and markdown processing
         if (response.context_html?.trim() && this.isValidAndSafeAccordionHTML(response.context_html)) {
             const contextElement = document.createElement('div');
             contextElement.className = 'context-container';
-            // Use a more secure way to set HTML content
-            this.setSafeHTML(contextElement, response.context_html);
+            
+            // Process context HTML for markdown and set safely
+            let processedHtml = response.context_html;
+            if (window.SafeMarkdownRenderer) {
+                processedHtml = SafeMarkdownRenderer.processDocumentContextHtml(processedHtml);
+            }
+            this.setSafeHTML(contextElement, processedHtml);
             messageElement.appendChild(contextElement);
         } else if (response.sources?.length > 0) {
             this.addSimpleSources(messageElement, response.sources);

@@ -1,7 +1,8 @@
 """Pydantic schemas for API data validation and serialization.
 
 Defines all data models for the DOF Chat application:
-- Document models: ChunkData, DocumentSource for RAG pipeline
+- Database models: Document, Chunk for direct BD mapping
+- API models: ChunkData, DocumentSource for API operations
 - Response models: ChatResponse, EnrichedChatResponse for API outputs  
 - Request models: ChatQuery for API inputs
 - Utility models: HealthCheck for monitoring
@@ -9,6 +10,45 @@ Defines all data models for the DOF Chat application:
 
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
+from datetime import datetime
+
+
+# ================================
+# DATABASE SCHEMAS - Direct mapping to BD tables  
+# ================================
+
+class Document(BaseModel):
+    """Direct mapping to documents table in database.
+    
+    Represents document metadata as stored in BD with all fields
+    matching the real table structure.
+    """
+    
+    id: Optional[int] = Field(
+        default=None,
+        description="Primary key from documents table"
+    )
+    title: str = Field(
+        ...,
+        description="Document title as stored in BD"
+    )
+    url: Optional[str] = Field(
+        default=None,
+        description="Unique URL to original document"
+    )
+    file_path: Optional[str] = Field(
+        default=None,
+        description="Path to document file if locally stored"
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        description="Document creation timestamp in BD"
+    )
+
+
+# ================================
+# API SCHEMAS - For user interface and operations
+# ================================
 
 
 class ChunkData(BaseModel):
@@ -25,10 +65,6 @@ class ChunkData(BaseModel):
     header: str = Field(
         default="",
         description="Section header or title for the fragment"
-    )
-    doc_type: str = Field(
-        default="DOCUMENTO",
-        description="Type of document (LEY, REGLAMENTO, NORMA, etc.)"
     )
 
 

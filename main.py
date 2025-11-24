@@ -1,4 +1,5 @@
 import air
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from routers import web, api
 from utils.logger import logger
@@ -7,14 +8,14 @@ from config import settings
 # Initialize Air application for web routes
 app = air.Air()
 
-# Create a separate FastAPI app for API routes to ensure proper JSON serialization
-fastapi_app = FastAPI()
-fastapi_app.include_router(api.router)
+# Lifespan handler to pre-initialize services (replaces deprecated on_event)
+@asynccontextmanager
+async def fastapi_lifespan(_: FastAPI):
+    """FastAPI lifespan context for startup/shutdown hooks.
 
-# Startup event to pre-initialize RAG service on FastAPI app
-@fastapi_app.on_event("startup")
-async def startup_event():
-    """Initialize RAG service during application startup."""
+    Startup: initialize RAG service.
+    Shutdown: (optional) add teardown logic if needed.
+    """
     logger.info("Starting DOF Chat application...")
     try:
         from rag_service import rag_service
@@ -22,6 +23,13 @@ async def startup_event():
         logger.info("RAG service pre-initialized")
     except Exception as e:
         logger.error(f"Failed to pre-initialize RAG service: {e}")
+    # Yield control to application runtime
+    yield
+    # Place optional shutdown/cleanup here if required in the future
+
+# Create a separate FastAPI app for API routes to ensure proper JSON serialization
+fastapi_app = FastAPI(lifespan=fastapi_lifespan)
+fastapi_app.include_router(api.router)
 
 # Mount static files directory first to avoid routing conflicts
 app.mount("/static", air.StaticFiles(directory="static"), name="static")

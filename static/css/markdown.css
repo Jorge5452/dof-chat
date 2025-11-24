@@ -1,0 +1,78 @@
+/* Clean Markdown Styles for DOF Chat */
+
+/* Headings - usando un azul suave y agradable */
+.heading-large,
+.heading-medium,
+.heading-small,
+span[class*="heading"] {
+    display: block;
+    font-weight: 600 !important;
+    color: #386cdd !important; /* Azul suave y profesional */
+    margin: 8px 0 4px 0;
+    line-height: 1.4;
+}
+
+.heading-large { font-size: 1.05em; }
+.heading-medium { font-size: 1.02em; }
+.heading-small { font-size: 1em; }
+
+/* Texto básico - ajustes más conservadores */
+.chunk-content {
+    font-size: 0.85em !important;
+    line-height: 1.4 !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+}
+
+.chunk-content-wrapper {
+    font-size: 0.8em !important;
+    line-height: 1.4 !important;
+}
+
+.inline-code {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 3px;
+    padding: 2px 4px;
+    font-family: monospace;
+    font-size: 0.9em;
+    color: #7c2d12;
+}
+
+.list-item {
+    display: block;
+    margin: 2px 0;
+    padding-left: 8px;
+}
+
+.blockquote {
+    display: block;
+    margin: 6px 0;
+    padding: 6px 10px;
+    background: #f1f5f9;
+    border-left: 3px solid #64748b;
+    font-style: italic;
+    color: #475569;
+}
+
+.chat-link {
+    color: #2563eb;
+    text-decoration: underline;
+}
+
+.chat-link:hover {
+    color: #1d4ed8;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .heading-large,
+    .heading-medium,
+    .heading-small { font-size: 0.95em; }
+    
+    .chunk-content { 
+        font-size: 0.8em !important; 
+        word-wrap: break-word !important;
+    }
+    .chunk-content-wrapper { font-size: 0.75em !important; }
+}

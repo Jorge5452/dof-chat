@@ -7,5 +7,7 @@ wheels/
 *.egg-info
 
 # Virtual environments
+.env
 .venv
 uv.lock
+dof_db/*.duckdb

@@ -35,7 +35,7 @@ class DatabaseManager:
                 # Test connection validity with a simple query
                 result = self._connection.execute("SELECT 1").fetchone()
                 if result != (1,):
-                    raise Exception("Database connection validation failed: unexpected result")
+                    raise Exception(f"Database connection validation failed: expected (1,), got {result}")
             except Exception as e:
                 logger.warning(f"Existing connection failed validation, reconnecting: {e}")
                 self._connection = None
@@ -62,6 +62,9 @@ class DatabaseManager:
         conn = self.connect()
         
         try:
+            # Optional detailed query logging for easier debugging in development
+            if getattr(settings, "debug", False):
+                logger.debug(f"Executing query: {query} | params={params!r}")
             if params:
                 result = conn.execute(query, params).fetchall()
             else:
