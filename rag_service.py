@@ -15,6 +15,7 @@ from schemas import EnrichedChatResponse, ChunkData, DocumentSource
 from services.vector_db_service import get_vector_db_service
 from utils.logger import logger
 from utils.context_renderer import render_embedded_sources
+from utils.date_utils import extract_date_from_title
 
 
 class RAGService:
@@ -268,10 +269,9 @@ NOTA: Esta es una respuesta simulada para pruebas de integración. En el modo de
             if isinstance(key, int) and key in doc_map:
                 doc = doc_map[key]
                 title = doc.title or f"Documento {doc.id}"
-                pub_date = doc.created_at.isoformat() if doc.created_at else None
                 url = doc.url
-                age_desc = None
-                age_emoji = None
+                # Extract publication date and age info from title (DDMMAAAA format)
+                pub_date, age_desc, age_emoji = extract_date_from_title(title)
             else:
                 # fallback metadata when document record is not available
                 if isinstance(key, str) and key.startswith("type::"):
