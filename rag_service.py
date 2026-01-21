@@ -7,12 +7,13 @@ Current mode: Full simulation for testing component connectivity.
 """
 
 import time
+import random
 import threading
-from typing import List
+from typing import List, Tuple
 from config import settings
-from database import db_manager
+from services.vector_service import VectorService
+from models import Document
 from schemas import EnrichedChatResponse, ChunkData, DocumentSource
-from services.vector_db_service import get_vector_db_service
 from utils.logger import logger
 from utils.context_renderer import render_embedded_sources
 from utils.date_utils import extract_date_from_title
@@ -40,31 +41,24 @@ class RAGService:
         # Only initialize once using instance attribute check
         if not hasattr(self, '_initialized'):
             self._initialized = False
-            self._retrieved_documents = []  # Store documents from vector search
+            self.vector_service = VectorService()
     
     def initialize(self):
         """Initialize service with mock implementations."""
         if self._initialized:
             return
         
-        logger.info("Initializing RAG service (mock mode)")
+        logger.info("Initializing RAG service (mock mode for embeddings/LLM)")
         
         # TODO: Initialize embedding model (Qwen/Qwen3-Embedding-0.6B)
         # TODO: Initialize Gemini API client
         # TODO: Validate API keys and model availability
         
-        # Test database connection (only connectivity, no model loading)
-        try:
-            db_result = db_manager.test_connection()
-            if db_result["status"] == "success":
-                logger.info("Database connected")
-            else:
-                logger.warning("Database connection failed, continuing with mocks")
-        except Exception as e:
-            logger.warning(f"Database test failed: {e}, continuing with mocks")
+        # Database connection is handled by AirSQLModel session pooling
+        logger.info("Database connection configured via AirSQLModel")
         
         self._initialized = True
-        logger.info("RAG service ready (mock mode)")
+        logger.info("RAG service ready (mock embeddings/LLM, real database)")
     
     def embed_query(self, text: str) -> List[float]:
         """Convert query text to embedding vector (mock implementation).
@@ -84,42 +78,53 @@ class RAGService:
         
         # Generate mock embedding for integration testing
         logger.debug(f"Processing embedding for text: '{text[:50]}...'")
-        logger.info("MOCK: Generating deterministic embedding vector")
+        logger.info("MOCK: Generating deterministic embedding vector based on text hash")
         
-        import random
-        random.seed(hash(text) % 2147483647)  # Deterministic based on text
+        # Use text hash as seed for deterministic but query-specific embeddings
+        text_hash = hash(text)
+        random.seed(text_hash)
         mock_embedding = [random.uniform(-0.1, 0.1) for _ in range(settings.embedding_dimension)]
         
-        logger.debug(f"Generated mock embedding with {len(mock_embedding)} dimensions")
+        logger.debug(f"Generated mock embedding with {len(mock_embedding)} dimensions (hash: {text_hash})")
         return mock_embedding
     
-    def search_chunks(self, embedding: List[float], top_k: int = None) -> List[ChunkData]:
-        """Search for similar chunks using VectorDBService.
-        
-        Delegates vector similarity search to VectorDBService and stores
-        retrieved documents for later use in document source creation.
+    async def search_chunks(self, embedding: List[float], top_k: int = None) -> Tuple[List[ChunkData], List[Document]]:
+        """Search for similar chunks using VectorService.
         
         Args:
-            embedding: Query embedding vector for similarity search
+            embedding: Query embedding vector
             top_k: Number of results to return
             
         Returns:
-            List[ChunkData]: Document chunks from database ordered by relevance
+            Tuple[List[ChunkData], List[Document]]: Chunk data objects and their source documents
         """
         if top_k is None:
             top_k = settings.max_chunks
         
-        logger.debug(f"Searching for {top_k} similar chunks using VectorDBService")
+        logger.info(f"Initiating vector search for top_k={top_k} chunks")
         
-        # Delegate to VectorDBService for vector similarity search
-        vector_db_service = get_vector_db_service()
-        chunks, documents = vector_db_service.search_similar_chunks(embedding, top_k)
-        
-        # Store documents for later use in _create_document_sources
-        self._retrieved_documents = documents
-        
-        logger.info(f"Retrieved {len(chunks)} chunks from {len(documents)} documents")
-        return chunks
+        try:
+            # Execute real vector search
+            chunks, documents = await self.vector_service.search_similar_chunks(embedding, top_k)
+            
+            logger.info(f"Vector search completed: retrieved {len(chunks)} chunks from {len(documents)} documents")
+            
+            # Map database models to schema objects
+            chunk_objects = []
+            for chunk in chunks:
+                chunk_obj = ChunkData(
+                    text=chunk.text,
+                    header=chunk.header or "Sección sin título",
+                    document_id=chunk.document_id
+                )
+                chunk_objects.append(chunk_obj)
+            
+            logger.debug(f"Returning {len(chunk_objects)} chunks from vector search")
+            return chunk_objects, documents
+            
+        except Exception as e:
+            logger.error(f"Vector search failed: {e}", exc_info=True)
+            return [], []
     
     def generate_answer(self, query: str, context_chunks: List[ChunkData]) -> str:
         """Generate answer (mock implementation).
@@ -163,7 +168,7 @@ NOTA: Esta es una respuesta simulada para pruebas de integración. En el modo de
         logger.debug(f"Generated response with {len(simulated_answer)} characters")
         return simulated_answer
     
-    def query(self, text: str) -> EnrichedChatResponse:
+    async def query(self, text: str) -> EnrichedChatResponse:
         """Complete RAG pipeline from user query to enriched response with accordion HTML.
         
         Pipeline: text → embedding → search → generate → structure → render → JSON response
@@ -185,14 +190,14 @@ NOTA: Esta es una respuesta simulada para pruebas de integración. En el modo de
             # Step 1: Embed query
             embedding = self.embed_query(text)
             
-            # Step 2: Search for relevant chunks
-            chunks = self.search_chunks(embedding)
+            # Step 2: Search for relevant chunks and documents
+            chunks, documents = await self.search_chunks(embedding)
             
             # Step 3: Generate answer
             answer = self.generate_answer(text, chunks)
             
             # Step 4: Create document sources for context rendering
-            document_sources = self._create_document_sources(chunks)
+            document_sources = self._create_document_sources(chunks, documents)
             
             # Step 5: Render context HTML using Air components
             query_id = f"q{int(time.time())}"
@@ -237,52 +242,48 @@ NOTA: Esta es una respuesta simulada para pruebas de integración. En el modo de
                 sources=[]
             )
     
-    def _create_document_sources(self, chunks: List[ChunkData]) -> List[DocumentSource]:
+    def _create_document_sources(self, chunks: List[ChunkData], documents: List[Document]) -> List[DocumentSource]:
         """Create DocumentSource objects from ChunkData for Air rendering.
         
-        Groups chunks by document type and creates structured DocumentSource objects
+        Groups chunks by document ID and creates structured DocumentSource objects
         with metadata for accordion display.
         
         Args:
             chunks: List of chunk data objects
+            documents: List of Document objects retrieved from the database
             
         Returns:
-            List[DocumentSource]: Document sources grouped by type
+            List[DocumentSource]: Document sources grouped by document ID
         """
-        # Use document metadata from database instead of generic doc_type.
-        # Creates lookup map: document_id -> Document for fast access to real titles, URLs, and dates.
-        doc_map = {d.id: d for d in self._retrieved_documents}
+        # Create lookup map: document_id -> Document (for titles, URLs, dates)
+        doc_map = {d.id: d for d in documents}
 
-        # Group chunks by their source document id
+        # Group chunks by their source document id (only valid document_ids)
         doc_groups = {}
+        orphan_chunks = []  # Chunks without valid document_id
+        
         for chunk in chunks:
             doc_id = chunk.document_id
-            if doc_id is None:
-                # fallback to grouping by doc_type if document_id is missing
-                doc_id = f"type::{chunk.doc_type or 'DOCUMENTO'}"
-            if doc_id not in doc_groups:
-                doc_groups[doc_id] = []
-            doc_groups[doc_id].append(chunk)
+            if doc_id is None or doc_id not in doc_map:
+                # Collect orphan chunks separately
+                orphan_chunks.append(chunk)
+            else:
+                if doc_id not in doc_groups:
+                    doc_groups[doc_id] = []
+                doc_groups[doc_id].append(chunk)
 
         document_sources = []
-        for key, doc_chunks in doc_groups.items():
-            if isinstance(key, int) and key in doc_map:
-                doc = doc_map[key]
-                title = doc.title or f"Documento {doc.id}"
-                url = doc.url
-                # Extract publication date and age info from title (DDMMAAAA format)
-                pub_date, age_desc, age_emoji = extract_date_from_title(title)
-            else:
-                # fallback metadata when document record is not available
-                if isinstance(key, str) and key.startswith("type::"):
-                    doc_type = key.split("::", 1)[1]
-                else:
-                    doc_type = "DOCUMENTO"
-                title = doc_type
-                pub_date = None
-                url = None
-                age_desc = None
-                age_emoji = None
+        
+        # Process chunks with valid documents
+        for doc_id, doc_chunks in doc_groups.items():
+            doc = doc_map[doc_id]
+            title = doc.title or f"Documento {doc.id}"
+            
+            # Extract publication date and age info from title (DDMMAAAA format)
+            pub_date, age_desc, age_emoji = extract_date_from_title(title)
+            
+            url = doc.url
+
 
             doc_source = DocumentSource(
                 title=title,
@@ -291,9 +292,21 @@ NOTA: Esta es una respuesta simulada para pruebas de integración. En el modo de
                 publication_date=pub_date,
                 age_description=age_desc,
                 age_emoji=age_emoji,
-                metadata={"group_key": key}
+                metadata={"document_id": doc_id}
             )
-
+            document_sources.append(doc_source)
+        
+        # Handle orphan chunks if any exist
+        if orphan_chunks:
+            doc_source = DocumentSource(
+                title="Documentos sin identificar",
+                chunks=orphan_chunks,
+                url=None,
+                publication_date=None,
+                age_description=None,
+                age_emoji=None,
+                metadata={"orphaned": True}
+            )
             document_sources.append(doc_source)
 
         return document_sources
